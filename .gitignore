@@ -1,0 +1,28 @@
+# Raw data (large, downloaded via src/etl/extract.py — not committed)
+data/raw/*
+!data/raw/.gitkeep
+
+# Processed SQLite DB (~43MB — reproducible via `python -m src.etl.pipeline`,
+# too large to be worth shipping in git; regenerate locally instead)
+data/processed/*.db
+!data/processed/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Jupyter
+*.ipynb_checkpoints

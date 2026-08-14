@@ -4,6 +4,17 @@ SQLAlchemy==2.0.52
 openpyxl==3.1.5
 requests==2.34.2
 numpy==2.5.2
+# Parquet engine for the transform -> load handoff artifact
+pyarrow==25.0.1
+
+# Orchestration
+# Airflow 3.3.1 is the version verified working on Python 3.14 / macOS arm64.
+# Airflow also publishes a constraints file for this combination:
+#   https://raw.githubusercontent.com/apache/airflow/constraints-3.3.1/constraints-3.14.txt
+# The pins above sit within a patch release of it (it pins numpy 2.5.1,
+# SQLAlchemy 2.0.51, pyarrow 25.0.0) and pandas 3.0.5 matches exactly, so the
+# two are compatible; installing plainly with these pins is verified to work.
+apache-airflow==3.3.1
 
 # Analysis / visualization
 matplotlib==3.11.1

@@ -7,6 +7,24 @@ data/raw/*
 data/processed/*.db
 !data/processed/.gitkeep
 
+# Intermediate artifact handed from the transform stage to the load stage
+# (~20MB Parquet, regenerated on every run)
+data/interim/*
+!data/interim/.gitkeep
+
+# Airflow runtime state. AIRFLOW_HOME is set to ./.airflow when running
+# locally; none of this belongs in version control (it contains the metadata
+# DB, generated config with a Fernet key, logs and PID files).
+.airflow/
+airflow.db
+airflow.cfg
+airflow_login.py
+unittests.cfg
+webserver_config.py
+logs/
+standalone_admin_password.txt
+simple_auth_manager_passwords.json.generated
+
 # Python
 __pycache__/
 *.py[cod]

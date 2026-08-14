@@ -2,8 +2,13 @@
 pipeline.py
 ===========
 
-Single runnable entrypoint that orchestrates extract -> transform -> load,
-logging row counts and duration for each stage.
+Single runnable entrypoint that orchestrates extract -> transform -> load ->
+validate, logging row counts and duration for each stage.
+
+This module is the *plain Python* runner. The same four stages are also wired
+into an Airflow DAG (``dags/retail_etl_dag.py``); both call the identical
+functions in ``src.etl.stages``, so there is exactly one implementation of
+each stage and the two entrypoints cannot drift apart.
 
 Usage
 -----
@@ -21,7 +26,7 @@ import logging
 import time
 from pathlib import Path
 
-from src.etl import extract, load, transform
+from src.etl import extract, load, stages
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,55 +38,43 @@ logger = logging.getLogger(__name__)
 def run_pipeline(
     raw_dir: Path = extract.DEFAULT_RAW_DIR,
     db_path: Path = load.DEFAULT_DB_PATH,
+    interim_path: Path = stages.DEFAULT_INTERIM_DIR / stages.DEFAULT_INTERIM_FILENAME,
     force_download: bool = False,
+    validate: bool = True,
 ) -> dict:
-    """Run the full ETL pipeline end to end and return a summary dict."""
+    """Run the full ETL pipeline end to end and return a summary dict.
+
+    Parameters
+    ----------
+    validate : bool
+        Run the data-quality suite after loading (default True). A failing
+        check raises ``quality.DataQualityError`` and aborts the run.
+    """
     pipeline_start = time.perf_counter()
     summary: dict = {}
 
     # --- Extract ---
-    stage_start = time.perf_counter()
-    logger.info("=== STAGE 1/3: EXTRACT ===")
-    raw_path = extract.download_dataset(dest_dir=raw_dir, force=force_download)
-    raw_df = extract.load_raw(raw_path)
-    stage_duration = time.perf_counter() - stage_start
-    logger.info(
-        "Extract complete: %d rows, %d columns in %.2fs",
-        raw_df.shape[0],
-        raw_df.shape[1],
-        stage_duration,
+    logger.info("=== STAGE 1/4: EXTRACT ===")
+    summary["extract"] = stages.stage_extract(
+        raw_dir=raw_dir, force_download=force_download
     )
-    summary["extract"] = {"rows": len(raw_df), "duration_sec": round(stage_duration, 2)}
 
     # --- Transform ---
-    stage_start = time.perf_counter()
-    logger.info("=== STAGE 2/3: TRANSFORM ===")
-    clean_df = transform.clean_data(raw_df)
-    stage_duration = time.perf_counter() - stage_start
-    rows_dropped = len(raw_df) - len(clean_df)
-    pct_dropped = 100 * rows_dropped / len(raw_df) if len(raw_df) else 0
-    logger.info(
-        "Transform complete: %d -> %d rows (%d dropped, %.1f%%) in %.2fs",
-        len(raw_df),
-        len(clean_df),
-        rows_dropped,
-        pct_dropped,
-        stage_duration,
+    logger.info("=== STAGE 2/4: TRANSFORM ===")
+    summary["transform"] = stages.stage_transform(
+        raw_path=summary["extract"]["raw_path"], interim_path=interim_path
     )
-    summary["transform"] = {
-        "rows_in": len(raw_df),
-        "rows_out": len(clean_df),
-        "rows_dropped": rows_dropped,
-        "duration_sec": round(stage_duration, 2),
-    }
 
     # --- Load ---
-    stage_start = time.perf_counter()
-    logger.info("=== STAGE 3/3: LOAD ===")
-    counts = load.load_to_sqlite(clean_df, db_path=db_path)
-    stage_duration = time.perf_counter() - stage_start
-    logger.info("Load complete: %s in %.2fs", counts, stage_duration)
-    summary["load"] = {**counts, "duration_sec": round(stage_duration, 2)}
+    logger.info("=== STAGE 3/4: LOAD ===")
+    summary["load"] = stages.stage_load(interim_path=interim_path, db_path=db_path)
+
+    # --- Validate ---
+    if validate:
+        logger.info("=== STAGE 4/4: VALIDATE ===")
+        summary["validate"] = stages.stage_validate(db_path=db_path)
+    else:
+        logger.info("=== STAGE 4/4: VALIDATE (skipped) ===")
 
     total_duration = time.perf_counter() - pipeline_start
     summary["total_duration_sec"] = round(total_duration, 2)

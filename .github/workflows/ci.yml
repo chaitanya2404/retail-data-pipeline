@@ -1,0 +1,109 @@
+name: CI
+
+# `main` is this repository's default branch (verified with `git branch --show-current`).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Nothing in this workflow needs write access or any secret; the ETL never
+# runs here, so no dataset download and no credentials are involved.
+permissions:
+  contents: read
+
+# A newer push to the same branch/PR makes the in-flight run obsolete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests (Python 3.14)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.14 is the version the pins in requirements.txt were resolved
+      # against (the local dev venv is 3.14.5) and the version Airflow 3.3.1
+      # publishes a constraints file for. Do not lower it without re-pinning.
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements-ci.txt
+
+      # requirements-ci.txt is a strict subset of requirements.txt at the same
+      # pins: the packages the test suite actually imports (pandas, numpy,
+      # SQLAlchemy) plus the other src/etl runtime deps. It deliberately omits
+      # Airflow, Jupyter and matplotlib/seaborn, which the tests never touch.
+      # The real Airflow install is exercised in the airflow-dag-import job
+      # below (requirements-airflow.txt), so nothing goes unverified.
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-ci.txt
+
+      # Cheap, dependency-free guard: a DAG file that no longer parses fails
+      # here in seconds, before the slower real Airflow import job finishes.
+      - name: Syntax-check the Airflow DAG
+        run: |
+          python -c "import ast; ast.parse(open('dags/retail_etl_dag.py').read()); print('dags/retail_etl_dag.py: syntax OK')"
+
+      # The full 62-test suite, unmodified. It builds every DataFrame inline,
+      # so it needs neither network access nor the ~23MB source dataset.
+      - name: Run test suite
+        run: python -m pytest
+
+  airflow-dag-import:
+    name: Airflow DAG import (Airflow 3.3.1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: requirements-airflow.txt
+
+      # requirements-airflow.txt is apache-airflow==3.3.1 plus only the
+      # src/etl runtime deps the DAG reaches through `src.etl.stages`; it
+      # omits the Jupyter and plotting stacks, which a DagBag parse never
+      # imports. It is installed under Airflow's official constraints file so
+      # the ~200 transitive dependencies (fastapi, starlette, pydantic,
+      # uvicorn, opentelemetry, ...) cannot float to a breaking release and
+      # turn this badge red with no commits to the repo. Verified to resolve
+      # on Linux/CPython 3.14 from wheels only, no compiler needed.
+      - name: Install Airflow (pinned, under official constraints)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-airflow.txt \
+            -c https://raw.githubusercontent.com/apache/airflow/constraints-3.3.1/constraints-3.14.txt
+
+      # A real parse through Airflow's own DagBag: catches broken imports,
+      # bad @dag/@task arguments and cycles, which ast.parse cannot see.
+      # DagBag only parses files; it never contacts the metadata DB, the
+      # network, or the dataset.
+      - name: Import the DAG through Airflow
+        env:
+          AIRFLOW_HOME: ${{ runner.temp }}/airflow
+        run: |
+          python - <<'PY'
+          from airflow.dag_processing.dagbag import DagBag
+
+          bag = DagBag("dags")
+          if bag.import_errors:
+              raise SystemExit(f"DAG import errors: {bag.import_errors}")
+          if "retail_etl" not in bag.dags:
+              raise SystemExit(f"retail_etl DAG not found; loaded: {sorted(bag.dags)}")
+          dag = bag.dags["retail_etl"]
+          print("DAGs loaded:", sorted(bag.dags))
+          print("Tasks:", sorted(t.task_id for t in dag.tasks))
+          PY

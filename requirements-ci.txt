@@ -1,0 +1,30 @@
+# CI-only dependency set for .github/workflows/ci.yml (`test` job).
+#
+# Why this file exists
+# --------------------
+# requirements.txt is the full local/dev environment: it also pulls in
+# apache-airflow 3.3.1 (~150 transitive packages), the Jupyter stack and the
+# plotting stack. None of that is needed to run `pytest`: the suite only
+# imports src/etl/transform.py and src/etl/quality.py, which need pandas,
+# numpy and SQLAlchemy. Installing the full set on every push costs minutes
+# for no extra signal.
+#
+# The pins below are copied verbatim from requirements.txt -- this file is a
+# strict *subset*, never a different or looser set of versions. The test suite
+# it installs is the complete 62-test suite; nothing is skipped or weakened.
+#
+# Airflow itself is still exercised in CI: the separate `airflow-dag-import`
+# job installs the real apache-airflow==3.3.1 from requirements-airflow.txt
+# (under the official Airflow constraints file) and imports the DAG through
+# Airflow's own DagBag.
+
+# Core data pipeline (runtime deps of src/etl/)
+pandas==3.0.5
+numpy==2.5.2
+SQLAlchemy==2.0.52
+openpyxl==3.1.5
+requests==2.34.2
+pyarrow==25.0.1
+
+# Testing
+pytest==9.1.1

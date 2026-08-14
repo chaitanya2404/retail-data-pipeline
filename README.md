@@ -1,5 +1,7 @@
 # Retail Data Pipeline
 
+[![CI](https://github.com/chaitanya2404/retail-data-pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/chaitanya2404/retail-data-pipeline/actions/workflows/ci.yml)
+
 A portfolio project demonstrating two halves of a real data role on a single
 real-world dataset:
 
@@ -50,7 +52,10 @@ retail-data-pipeline/
 │   ├── interim/            # Cleaned Parquet handoff artifact (gitignored)
 │   └── processed/          # Cleaned SQLite DB (gitignored, regenerate via pipeline.py)
 ├── .airflow/               # AIRFLOW_HOME for local runs (gitignored)
+├── .github/workflows/
+│   └── ci.yml              # CI: pytest on Python 3.14 + an Airflow DAG-import check
 ├── requirements.txt
+├── requirements-ci.txt     # Subset of requirements.txt used by the CI test job
 ├── pytest.ini
 ├── LICENSE
 └── README.md
@@ -311,6 +316,25 @@ DataFrames rather than the full dataset, so the whole run takes under a
 second. Every quality check is tested with both a passing and a
 deliberately-failing case, so the suite proves the checks actually catch bad
 data rather than only returning PASS on good data.
+
+### Continuous integration
+
+Every push and pull request against `main` runs
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) on Python 3.14 (the
+version these pins were resolved against), in two jobs:
+
+| Job | Installs | Runs |
+| --- | --- | --- |
+| **Tests** | `requirements-ci.txt` | `python -m pytest` (all 62 tests) + an `ast.parse` syntax check of the DAG file |
+| **Airflow DAG import** | `requirements.txt` (Airflow 3.3.1 included) | a real `DagBag("dags")` parse asserting `retail_etl` and its four tasks load without import errors |
+
+`requirements-ci.txt` is a strict *subset* of `requirements.txt` at identical
+pins — the packages `src/etl/` actually imports — with Airflow, Jupyter and
+the plotting stack left out, since the test suite never touches them. That
+keeps the fast feedback job to a few seconds of installing; the full pinned
+environment, Airflow and all, is still installed and exercised by the second
+job. No test is skipped or weakened in CI, and neither job needs network
+access at test time, the ~23MB source dataset, or any secret.
 
 ### Open the analysis notebook
 

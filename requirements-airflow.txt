@@ -1,0 +1,43 @@
+# CI-only dependency set for .github/workflows/ci.yml (`airflow-dag-import` job).
+#
+# Why this file exists
+# --------------------
+# The job does exactly one thing: parse dags/retail_etl_dag.py through
+# Airflow's own DagBag. That needs apache-airflow itself plus the src/etl
+# runtime deps the DAG pulls in via `from src.etl import stages`
+# (pandas, numpy, SQLAlchemy, openpyxl, requests, pyarrow). Installing the
+# full requirements.txt instead would additionally drag in the Jupyter stack
+# (jupyter, ipykernel, nbconvert, nbformat) and the plotting stack
+# (matplotlib, seaborn) -- ~170 extra wheels that the DAG import never
+# imports, costing runner minutes and adding failure surface for nothing.
+# This mirrors the slim-requirements pattern already used by requirements-ci.txt
+# for the `test` job.
+#
+# Why the pins differ slightly from requirements.txt
+# --------------------------------------------------
+# This file is installed under the official Airflow constraints file:
+#   https://raw.githubusercontent.com/apache/airflow/constraints-3.3.1/constraints-3.14.txt
+# passed as `-c` on the pip command line in ci.yml. Constraints are what keep
+# Airflow's ~200 transitive dependencies (fastapi, starlette, pydantic,
+# uvicorn, opentelemetry, ...) from floating to whatever is latest on the day
+# the job runs -- the standard way an unattended Airflow CI badge goes red
+# with zero commits to the repo.
+#
+# pip hard-errors when a requirement pin contradicts a constraint, so the
+# three deps where requirements.txt deliberately sits one patch release ahead
+# of the constraints file (numpy 2.5.2 > 2.5.1, SQLAlchemy 2.0.52 > 2.0.51,
+# pyarrow 25.0.1 > 25.0.0) are pinned here at the constraints values instead.
+# That is the Airflow-verified combination; requirements.txt keeps its own
+# pins for local dev, where Airflow is installed without constraints.
+
+# Orchestration
+apache-airflow==3.3.1
+
+# Runtime deps of src/etl/, which the DAG imports through src.etl.stages.
+# Versions match constraints-3.14.txt for Airflow 3.3.1.
+pandas==3.0.5
+numpy==2.5.1
+SQLAlchemy==2.0.51
+openpyxl==3.1.5
+requests==2.34.2
+pyarrow==25.0.0

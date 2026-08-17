@@ -58,6 +58,36 @@ jobs:
       - name: Run test suite
         run: python -m pytest
 
+  validation:
+    name: Great Expectations suite (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.12, not the 3.14 the other Python jobs use. Great Expectations declares
+      # `>=3.10,<3.14`, which is exactly why it is not in requirements.txt: the ETL must stay
+      # installable on 3.14, so the expectation suite is an optional extra with its own job.
+      # The `test` job on 3.14 still runs the contract and drift tests and skips these, so both
+      # halves are covered rather than one being assumed.
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-validation.txt
+
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-validation.txt
+
+      # Every frame in this file is built inline, so the suite needs neither network access nor
+      # the 23MB source extract.
+      - name: Run the validation suite
+        run: python -m pytest tests/test_validation.py -v
+
   warehouse:
     name: dbt models and tests (Postgres 16)
     runs-on: ubuntu-latest

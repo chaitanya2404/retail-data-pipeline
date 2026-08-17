@@ -44,6 +44,13 @@ from pathlib import Path
 import pandas as pd
 
 from src.etl import extract, load, quality, transform
+from src.etl.validation import (
+    EXPECTATIONS_AVAILABLE,
+    DataValidationError,
+    SchemaDriftError,
+    check_contract,
+    validate_batch,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +82,76 @@ def stage_extract(
 
     logger.info("Extract complete: %s (%.2f MB) in %.2fs", raw_path, size_mb, duration)
     return {"raw_path": str(raw_path), "size_mb": size_mb, "duration_sec": duration}
+
+
+def stage_screen(
+    raw_path: Path | str,
+    *,
+    enforce: bool = True,
+) -> dict:
+    """Screen the raw batch before a single row is transformed or loaded.
+
+    Placed here rather than after the load on purpose. The existing ``stage_validate`` asks
+    whether the warehouse ended up correct; this asks whether the batch was ever fit to process.
+    Catching a renamed column or an empty extract at the front door costs one failed task —
+    catching it downstream means the load already happened and the dashboards already moved.
+
+    Two independent checks, because they fail differently:
+
+    * The contract catches *structural* change — a column gone, a type switched, nulls where the
+      producer promised none. Breaking findings abort; a new column is recorded and waved through.
+    * The expectation suite catches *distributional* change — an empty extract, attribution
+      collapsing, prices inverting, country cardinality exploding.
+
+    Returns
+    -------
+    dict with ``drift``, ``expectations``, ``rows`` and ``duration_sec``.
+    """
+    start = time.perf_counter()
+
+    raw_df = extract.load_raw(Path(raw_path))
+
+    # enforce=False here, then decide below: the expectation suite should still run even when the
+    # contract has already failed, so one task reports everything wrong with the batch rather than
+    # revealing the next problem only after the first is fixed.
+    drift = check_contract(raw_df, enforce=False)
+
+    # Great Expectations pins itself below Python 3.14, which the rest of the pipeline runs on.
+    # Structural screening is the part that must never be skipped, so a missing GX degrades this
+    # stage rather than failing it — and says so, instead of quietly checking less than it claims.
+    expectations = None
+    if EXPECTATIONS_AVAILABLE:
+        expectations = validate_batch(raw_df, enforce=False)
+    else:
+        logger.warning(
+            "great_expectations unavailable on this interpreter; screening with the schema "
+            "contract only. Install requirements-validation.txt on Python 3.12 for the full suite."
+        )
+
+    for finding in drift.additive:
+        logger.warning("additive schema drift: %s (%s)", finding.column, finding.detail)
+
+    duration = round(time.perf_counter() - start, 2)
+    logger.info(
+        "Screen complete: %d rows, %s, %s in %.2fs",
+        len(raw_df),
+        drift.summary(),
+        expectations.summary() if expectations else "expectation suite skipped",
+        duration,
+    )
+
+    if enforce:
+        if drift.has_breaking_drift:
+            raise SchemaDriftError(drift)
+        if expectations is not None and not expectations.success:
+            raise DataValidationError(expectations)
+
+    return {
+        "rows": len(raw_df),
+        "drift": drift.to_dict(),
+        "expectations": expectations.to_dict() if expectations else {"skipped": True},
+        "duration_sec": duration,
+    }
 
 
 def stage_transform(

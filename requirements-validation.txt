@@ -1,0 +1,22 @@
+# Great Expectations is kept out of requirements.txt on purpose.
+#
+# It declares `requires_python = >=3.10,<3.14`, and the rest of this project runs on 3.14 — the
+# version Airflow 3.3.1 publishes constraints for and the one the ETL pins were resolved against.
+# Putting GX in the core requirements would make the whole pipeline uninstallable on 3.14.
+#
+# The split follows the code: schema-contract and drift detection are pure pandas and always
+# available, so a batch is screened for structural change on any supported interpreter. The
+# expectation suite is an optional enhancement that runs where GX can be installed, and
+# `stage_screen` degrades to contract-only with a warning when the import fails rather than
+# taking the pipeline down.
+#
+# Install with:
+#   python3.12 -m venv .venv-data && .venv-data/bin/pip install -r requirements-validation.txt
+#
+# Pinned because the fluent API changed substantially between 0.x and 1.x, and
+# src/etl/validation/expectations.py is written against the 1.x ValidationDefinition flow.
+great-expectations==1.20.0
+
+# The validation suite runs against the same pandas the ETL uses.
+pandas==3.0.5
+pytest==9.1.1

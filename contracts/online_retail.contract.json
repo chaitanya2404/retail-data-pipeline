@@ -1,0 +1,54 @@
+{
+  "name": "online_retail",
+  "version": 1,
+  "columns": [
+    {
+      "name": "InvoiceNo",
+      "type_kind": "string",
+      "nullable": false,
+      "description": "Invoice identifier. String, not numeric: cancellations are prefixed with 'C', so parsing it as a number silently drops them."
+    },
+    {
+      "name": "StockCode",
+      "type_kind": "string",
+      "nullable": false,
+      "description": "Product identifier. Alphanumeric ('85123A'), so it cannot be numeric."
+    },
+    {
+      "name": "Description",
+      "type_kind": "string",
+      "nullable": true,
+      "description": "Free-text product name. Genuinely nullable in the source; the transform drops those rows."
+    },
+    {
+      "name": "Quantity",
+      "type_kind": "integer",
+      "nullable": false,
+      "description": "Units on the line. Negative on cancellations, which the transform removes."
+    },
+    {
+      "name": "InvoiceDate",
+      "type_kind": "datetime",
+      "nullable": false,
+      "description": "Invoice timestamp. Declared datetime so a batch arriving as text fails here rather than at the first date_trunc downstream."
+    },
+    {
+      "name": "UnitPrice",
+      "type_kind": "float",
+      "nullable": false,
+      "description": "Price per unit in GBP."
+    },
+    {
+      "name": "CustomerID",
+      "type_kind": "float",
+      "nullable": true,
+      "description": "Customer identifier. Float rather than integer only because pandas represents a nullable integer column that way on read; roughly a quarter of rows have no customer, which is expected and must not fail the batch."
+    },
+    {
+      "name": "Country",
+      "type_kind": "string",
+      "nullable": false,
+      "description": "Destination country. Small controlled vocabulary; a cardinality jump means a picklist was replaced with free text upstream."
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+# Kept inside the project rather than in ~/.dbt so a fresh clone can run the models without any
+# machine-level setup. Every value is an env var with a local default — nothing here is a secret,
+# and a deployed run overrides all of them.
+retail_warehouse:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_HOST', 'localhost') }}"
+      port: "{{ env_var('WAREHOUSE_PORT', '55432') | int }}"
+      user: "{{ env_var('WAREHOUSE_USER', 'retail') }}"
+      password: "{{ env_var('WAREHOUSE_PASSWORD', 'retail') }}"
+      dbname: "{{ env_var('WAREHOUSE_DB', 'retail_warehouse') }}"
+      schema: public
+      # One thread per model that can run in parallel. Four matches the dependency width of this
+      # DAG; more would just queue on the same Postgres backend.
+      threads: 4
+      keepalives_idle: 0

@@ -1,0 +1,27 @@
+name: retail_warehouse
+version: '1.0.0'
+config-version: 2
+
+profile: retail_warehouse
+
+model-paths: ['models']
+test-paths: ['tests']
+macro-paths: ['macros']
+seed-paths: ['seeds']
+
+clean-targets:
+  - target
+  - dbt_packages
+
+models:
+  retail_warehouse:
+    staging:
+      # Views: staging only renames, casts and filters. Materialising it would double the storage
+      # and add a refresh step for a layer that does no real work.
+      +materialized: view
+      +schema: staging
+    marts:
+      # Tables: the marts are read repeatedly by BI and joined against each other, so paying the
+      # build cost once beats recomputing the joins on every dashboard refresh.
+      +materialized: table
+      +schema: marts

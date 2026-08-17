@@ -1,0 +1,108 @@
+version: 2
+
+models:
+  - name: fct_sales
+    description: >
+      Sales fact at invoice-line grain. Every dashboard metric resolves to an aggregate of this
+      table joined to the three dimensions.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          expression: "line_revenue > 0"
+      - dbt_utils.expression_is_true:
+          # Guards the arithmetic itself: if staging ever changes how revenue is derived, this
+          # fails rather than letting a redefined metric propagate to every dashboard.
+          expression: "abs(line_revenue - (quantity * unit_price)) < 0.01"
+    columns:
+      - name: sales_key
+        description: Surrogate key. Unique by construction over the full natural composite.
+        data_tests:
+          - unique
+          - not_null
+      - name: date_key
+        description: Foreign key to dim_date.
+        data_tests:
+          - not_null
+          # Referential integrity. A fact row pointing at a missing dimension key silently
+          # vanishes from any inner-joined report — the failure mode behind "the totals don't
+          # match" tickets weeks after the fact.
+          - relationships:
+              to: ref('dim_date')
+              field: date_key
+      - name: customer_key
+        description: Foreign key to dim_customer.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_key
+      - name: product_key
+        description: Foreign key to dim_product.
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('dim_product')
+              field: product_key
+      - name: quantity
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 1
+              inclusive: true
+      - name: unit_price
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              inclusive: false
+
+  - name: dim_customer
+    description: Customer dimension with RFM scores and segment.
+    columns:
+      - name: customer_key
+        data_tests:
+          - unique
+          - not_null
+      - name: rfm_segment
+        data_tests:
+          - not_null
+          # Pinned so that adding a segment to the CASE without updating downstream reports and
+          # documentation fails here first.
+          - accepted_values:
+              values: ['Champion', 'Loyal', 'Recent', 'At Risk', 'Churned', 'Regular', 'Unattributed']
+      - name: recency_score
+        data_tests:
+          - dbt_utils.accepted_range: { min_value: 1, max_value: 5, inclusive: true }
+      - name: frequency_score
+        data_tests:
+          - dbt_utils.accepted_range: { min_value: 1, max_value: 5, inclusive: true }
+      - name: monetary_score
+        data_tests:
+          - dbt_utils.accepted_range: { min_value: 1, max_value: 5, inclusive: true }
+      - name: lifetime_revenue
+        data_tests:
+          - not_null
+
+  - name: dim_product
+    description: Product dimension with a deterministically resolved description.
+    columns:
+      - name: product_key
+        data_tests:
+          - unique
+          - not_null
+      - name: product_description
+        data_tests:
+          - not_null
+      - name: avg_selling_price
+        data_tests:
+          - not_null
+
+  - name: dim_date
+    description: Generated date spine covering every day in the fact table, gaps included.
+    columns:
+      - name: date_key
+        data_tests:
+          - unique
+          - not_null
+      - name: day_of_week
+        data_tests:
+          - dbt_utils.accepted_range: { min_value: 1, max_value: 7, inclusive: true }

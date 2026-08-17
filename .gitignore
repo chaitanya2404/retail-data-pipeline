@@ -44,3 +44,9 @@ env/
 
 # Jupyter
 *.ipynb_checkpoints
+
+# Data-stack local artifacts
+.venv-data/
+warehouse/target/
+warehouse/dbt_packages/
+warehouse/logs/

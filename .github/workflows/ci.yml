@@ -58,6 +58,68 @@ jobs:
       - name: Run test suite
         run: python -m pytest
 
+  warehouse:
+    name: dbt models and tests (Postgres 16)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: retail_warehouse
+          POSTGRES_USER: retail
+          POSTGRES_PASSWORD: retail
+        ports:
+          - 5432:5432
+        # Without this the job races the database: the container is "started" long before
+        # Postgres accepts connections, and dbt fails on the first query.
+        options: >-
+          --health-cmd "pg_isready -U retail -d retail_warehouse"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+
+    env:
+      DBT_PROFILES_DIR: warehouse
+      WAREHOUSE_HOST: localhost
+      # The service maps to 5432 here, unlike the local compose file which uses 55432 to dodge a
+      # locally installed Postgres.
+      WAREHOUSE_PORT: '5432'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.12 rather than the 3.14 the ETL jobs use: the dbt adapters do not publish wheels for
+      # 3.14 yet, and building them from source is not worth it for this job.
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dbt
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "dbt-core~=1.12" "dbt-postgres~=1.11"
+
+      # The 23MB source dataset is never downloaded in CI. This fixture is a handful of rows
+      # chosen to hit the cases that actually break the models: a null customer, conflicting
+      # descriptions for one stock code, zero-price noise, and a calendar gap.
+      - name: Seed the landing zone
+        env:
+          PGPASSWORD: retail
+        run: psql -h localhost -U retail -d retail_warehouse -v ON_ERROR_STOP=1 -f warehouse/ci/seed_raw.sql
+
+      - name: Install dbt packages
+        run: dbt deps --project-dir warehouse
+
+      # `build` rather than `run` + `test`: it interleaves them, so a model whose tests fail does
+      # not have its dependents built on top of known-bad data.
+      - name: Build models and run tests
+        run: dbt build --project-dir warehouse
+
+      - name: Generate documentation
+        run: dbt docs generate --project-dir warehouse
+
   airflow-dag-import:
     name: Airflow DAG import (Airflow 3.3.1)
     runs-on: ubuntu-latest

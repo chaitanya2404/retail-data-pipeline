@@ -1,0 +1,41 @@
+# Local analytics warehouse.
+#
+# Postgres rather than the SQLite the ETL previously loaded into: the dimensional models rely on
+# window functions over large partitions, real EXPLAIN plans, and a schema-per-layer separation
+# that SQLite does not have. It is also the engine the dbt models are written against, so what
+# runs locally is what would run in a deployed environment.
+
+name: retail-warehouse
+
+services:
+  warehouse:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: retail_warehouse
+      POSTGRES_USER: retail
+      POSTGRES_PASSWORD: retail
+    ports:
+      # 55432 on the host: 5432 is very often already taken by a local Postgres, and a port
+      # clash here fails in a way that looks like a dbt connection problem.
+      - '55432:5432'
+    volumes:
+      - warehouse-data:/var/lib/postgresql/data
+    healthcheck:
+      # -U and -d matter: without them pg_isready checks the default role and reports ready
+      # before the application database exists.
+      test: ['CMD-SHELL', 'pg_isready -U retail -d retail_warehouse']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    command:
+      # The dataset is ~540k rows and the marts do several large sorts and hash joins. The
+      # defaults (4MB work_mem, 128MB shared_buffers) spill those to disk and make the models
+      # look far slower than the SQL deserves.
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - work_mem=32MB
+
+volumes:
+  warehouse-data:

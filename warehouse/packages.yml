@@ -1,0 +1,6 @@
+packages:
+  # Used for generate_surrogate_key and the extra generic tests in the mart schema. Pinned to a
+  # range rather than a single version so a patch release is picked up, but a major bump — which
+  # has changed macro signatures before — is not.
+  - package: dbt-labs/dbt_utils
+    version: [">=1.3.0", "<2.0.0"]

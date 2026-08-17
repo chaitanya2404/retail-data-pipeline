@@ -1,0 +1,56 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: >
+      Landing zone written by the Python ETL (`src/etl/load.py`). dbt never writes here — the
+      boundary between ingestion and modelling is what lets either side be rebuilt without
+      touching the other.
+
+    # Freshness is asserted, not assumed. `dbt source freshness` fails the run when the loader has
+    # not landed data recently, which catches a silently dead upstream job before the marts are
+    # rebuilt from stale rows and a dashboard quietly shows yesterday's numbers as today's.
+    freshness:
+      warn_after: { count: 12, period: hour }
+      error_after: { count: 36, period: hour }
+    loaded_at_field: loaded_at
+
+    tables:
+      - name: transactions
+        description: One row per invoice line, as cleaned by the Python transform stage.
+        columns:
+          - name: invoice_no
+            description: Invoice identifier. Not unique on its own — an invoice has many lines.
+            data_tests:
+              - not_null
+          - name: stock_code
+            description: Product identifier as issued by the retailer.
+            data_tests:
+              - not_null
+          - name: description
+            description: Free-text product name. Nullable in the source data.
+          - name: quantity
+            description: Units sold on the line. Cancellations were removed upstream.
+            data_tests:
+              - not_null
+          - name: invoice_date
+            description: Timestamp of the invoice.
+            data_tests:
+              - not_null
+          - name: unit_price
+            description: Price per unit in GBP.
+            data_tests:
+              - not_null
+          - name: customer_id
+            description: >
+              Customer identifier. Nullable by design — roughly a quarter of rows in the source
+              have no customer attached, and dropping them would understate revenue.
+          - name: country
+            description: Destination country of the order.
+            data_tests:
+              - not_null
+          - name: loaded_at
+            description: When the ETL landed the row. Drives source freshness.
+            data_tests:
+              - not_null

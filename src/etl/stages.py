@@ -43,7 +43,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.etl import extract, load, quality, transform
+from src.etl import extract, load, observability, quality, transform
 from src.etl.validation import (
     EXPECTATIONS_AVAILABLE,
     DataValidationError,
@@ -132,6 +132,26 @@ def stage_screen(
         logger.warning("additive schema drift: %s (%s)", finding.column, finding.detail)
 
     duration = round(time.perf_counter() - start, 2)
+
+    # One event per finding, plus a stage-level summary. Emitted before the enforcement check
+    # below so a batch that is about to be rejected still leaves a trail explaining why — the
+    # failing run is exactly the one whose telemetry matters.
+    expectations_payload = expectations.to_dict() if expectations else {"failures": []}
+    observability.emit_quality_findings("screen", drift.to_dict(), expectations_payload)
+    observability.emit(
+        "screen",
+        "failure" if (drift.has_breaking_drift or (expectations and not expectations.success))
+        else "success",
+        duration_ms=round(duration * 1000, 2),
+        metrics={
+            "rows": len(raw_df),
+            "breaking_drift": len(drift.breaking),
+            "additive_drift": len(drift.additive),
+            "expectations_run": len(expectations.results) if expectations else 0,
+            "expectations_failed": len(expectations.failures) if expectations else 0,
+        },
+    )
+
     logger.info(
         "Screen complete: %d rows, %s, %s in %.2fs",
         len(raw_df),

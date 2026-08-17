@@ -1,0 +1,116 @@
+{
+  "index_patterns": ["retail-pipeline-*"],
+  "priority": 200,
+  "_meta": {
+    "description": "Run events emitted by the retail ETL. Mappings are explicit because dynamic mapping decides types from whichever document happens to arrive first - the run where pct_dropped was 0 maps it as long, and the next run reporting 3.1 fails to index entirely.",
+    "managed_by": "retail-data-pipeline"
+  },
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 0,
+      "refresh_interval": "5s",
+      "index.mapping.total_fields.limit": 500
+    },
+    "mappings": {
+      "dynamic": "strict",
+      "properties": {
+        "@timestamp": { "type": "date" },
+
+        "event": {
+          "properties": {
+            "dataset": { "type": "keyword" },
+            "module": { "type": "keyword" },
+            "kind": { "type": "keyword" }
+          }
+        },
+
+        "service": {
+          "properties": {
+            "name": { "type": "keyword" },
+            "environment": { "type": "keyword" }
+          }
+        },
+
+        "host": {
+          "properties": {
+            "name": { "type": "keyword" }
+          }
+        },
+
+        "run": {
+          "properties": {
+            "id": { "type": "keyword" }
+          }
+        },
+
+        "stage": { "type": "keyword" },
+        "outcome": { "type": "keyword" },
+        "duration_ms": { "type": "double" },
+
+        "metrics": {
+          "properties": {
+            "rows": { "type": "long" },
+            "rows_in": { "type": "long" },
+            "rows_out": { "type": "long" },
+            "rows_dropped": { "type": "long" },
+            "pct_dropped": { "type": "double" },
+            "rows_written": { "type": "long" },
+            "breaking_drift": { "type": "long" },
+            "additive_drift": { "type": "long" },
+            "expectations_run": { "type": "long" },
+            "expectations_failed": { "type": "long" }
+          }
+        },
+
+        "finding": {
+          "properties": {
+            "category": { "type": "keyword" },
+            "kind": { "type": "keyword" },
+            "severity": { "type": "keyword" },
+            "column": { "type": "keyword" },
+            "detail": { "type": "text" }
+          }
+        },
+
+        "error": {
+          "properties": {
+            "type": { "type": "keyword" },
+            "message": {
+              "type": "text",
+              "fields": {
+                "keyword": { "type": "keyword", "ignore_above": 1024 }
+              }
+            }
+          }
+        },
+
+        "log": {
+          "properties": {
+            "level": { "type": "keyword" },
+            "logger": { "type": "keyword" },
+            "message": { "type": "text" },
+            "source": { "type": "keyword" }
+          }
+        },
+
+        "database": {
+          "properties": {
+            "duration_ms": { "type": "double" },
+            "statement": { "type": "text" },
+            "pid": { "type": "long" }
+          }
+        },
+
+        "pipeline": {
+          "properties": {
+            "ingested_at": { "type": "date" },
+            "source": { "type": "keyword" }
+          }
+        },
+
+        "tags": { "type": "keyword" }
+      }
+    }
+  }
+}

@@ -1,0 +1,92 @@
+# Elasticsearch + Logstash + Kibana for pipeline observability.
+#
+# A separate file from docker-compose.yml so the warehouse can be run on its own. ELK wants
+# several gigabytes of RAM, and someone who only wants to build the dbt models should not have to
+# pay for a search cluster they are not going to open.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+
+name: retail-observability
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.3
+    environment:
+      - discovery.type=single-node
+      # Security off for local development only. This cluster holds operational logs on a
+      # developer laptop and is never exposed; every deployed environment runs with TLS and
+      # authentication, which is why the Logstash output reads its host from an env var rather
+      # than hard-coding plain HTTP.
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      # Bounded heap. Elasticsearch otherwise sizes itself from total host memory and will
+      # cheerfully take half the laptop.
+      - ES_JAVA_OPTS=-Xms1g -Xmx1g
+      - action.destructive_requires_name=true
+    ports:
+      - '9200:9200'
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      # `status=yellow` is the correct bar for a single node: with one node and no replicas every
+      # index is permanently yellow by definition, so waiting for green would hang forever.
+      test:
+        [
+          'CMD-SHELL',
+          'curl -fsS "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s" >/dev/null || exit 1',
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 24
+      start_period: 30s
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.3
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - LS_JAVA_OPTS=-Xms512m -Xmx512m
+      # Monitoring off: it ships Logstash's own metrics into the same cluster and, on a single
+      # node, the self-reporting noise outweighs the pipeline events it is supposed to be about.
+      - xpack.monitoring.enabled=false
+    volumes:
+      - ./observability/logstash/pipeline:/usr/share/logstash/pipeline:ro
+      # The event log the ETL writes on the host, tailed read-only.
+      - ./logs:/logs:ro
+      - ./logs/postgres:/pglogs:ro
+      # Named volume for sincedb: without persistence, a container restart re-reads every file
+      # from the beginning and every metric in Kibana doubles.
+      - logstash-data:/usr/share/logstash/data
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:9600/_node/pipelines >/dev/null || exit 1']
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.15.3
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      # Fixed key so saved objects survive a restart. Without it Kibana generates a new key each
+      # boot and every saved dashboard becomes undecryptable.
+      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=retail_pipeline_local_dev_key_32chars
+    ports:
+      - '5601:5601'
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://localhost:5601/api/status >/dev/null || exit 1']
+      interval: 15s
+      timeout: 10s
+      retries: 24
+      start_period: 60s
+
+volumes:
+  es-data:
+  logstash-data:

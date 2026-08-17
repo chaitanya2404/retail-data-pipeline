@@ -88,6 +88,40 @@ jobs:
       - name: Run the validation suite
         run: python -m pytest tests/test_validation.py -v
 
+  spark:
+    name: PySpark medallion (Python 3.12, JDK 21)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Spark 4 requires a JVM and refuses to start on Java 8 or 11. Set up before Python so a
+      # missing JDK fails here rather than as an opaque Py4J connection error later.
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+
+      # 3.12 rather than 3.14: PySpark's worker and driver must run the same minor version, and
+      # the wheels do not cover 3.14 yet.
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-spark.txt
+
+      - name: Install PySpark
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-spark.txt
+
+      # Every frame is built inline, so no dataset download and no cluster are needed.
+      - name: Run the medallion tests
+        run: python -m pytest tests/test_spark.py -v
+
   warehouse:
     name: dbt models and tests (Postgres 16)
     runs-on: ubuntu-latest

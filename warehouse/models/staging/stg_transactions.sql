@@ -40,3 +40,17 @@ select * from renamed
 -- inflate line counts while contributing nothing to revenue.
 where quantity > 0
   and unit_price > 0
+
+  -- Ledger adjustments, not sales. This exclusion was missing until the PySpark implementation
+  -- of the same logic disagreed by exactly £11,062.06.
+  --
+  -- "Adjust bad debt" is booked as three rows: A563185 at +11,062.06 and A563186/A563187 at
+  -- -11,062.06 each. The sign filter above silently admits the positive leg while rejecting the
+  -- two negative ones, so a write-off was landing in the warehouse as revenue. Filtering on the
+  -- invoice prefix removes the whole entry rather than an arbitrary third of it.
+  and invoice_no not like 'A%'
+
+  -- Cancellations are C-prefixed and carry negative quantities, so the filter above already
+  -- excludes them. Stated explicitly because relying on that coincidence means a future change
+  -- to the quantity rule would quietly readmit them.
+  and invoice_no not like 'C%'

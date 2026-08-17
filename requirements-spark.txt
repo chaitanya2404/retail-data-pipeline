@@ -1,0 +1,11 @@
+# PySpark, kept out of requirements.txt for the same reason as Great Expectations: it needs a JVM
+# and pins its own interpreter range, while the core ETL must stay installable with pip alone.
+#
+# Install with:
+#   python3.12 -m venv .venv-data && .venv-data/bin/pip install -r requirements-spark.txt
+#
+# Requires a JDK 17 or 21 on PATH (JAVA_HOME). Spark 4 does not run on 8 or 11.
+pyspark==4.2.0
+pandas==3.0.5
+openpyxl==3.1.5
+pytest==9.1.1
